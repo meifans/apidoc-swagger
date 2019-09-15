@@ -1,4 +1,4 @@
-package com.github.meifans.apidoc.swagger;
+package com.github.meifans.apidoc.maven.plugin;
 
 import org.codehaus.plexus.classworlds.realm.ClassRealm;
 import org.codehaus.plexus.component.annotations.Component;

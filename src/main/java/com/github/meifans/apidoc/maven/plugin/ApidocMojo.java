@@ -1,4 +1,4 @@
-package com.github.meifans.apidoc.swagger;
+package com.github.meifans.apidoc.maven.plugin;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -39,25 +39,98 @@ import io.swagger.v3.oas.models.OpenAPI;
 
 import static java.lang.String.format;
 
+/**
+ * Base on Swagger-Maven-Plugin.
+ *
+ * Implements Spring Web compatibility.
+ *
+ * OpenAPI3 Specification rendering for Markdown support.
+ *
+ * @author meifans
+ */
 @Mojo(
-    name = "resolve",
-    requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-    defaultPhase = LifecyclePhase.COMPILE,
-    threadSafe = true,
-    configurator = "include-project-dependencies"
+        name = "resolve",
+        requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
+        defaultPhase = LifecyclePhase.COMPILE,
+        threadSafe = true,
+        configurator = "include-project-dependencies"
 )
 public class ApidocMojo extends AbstractMojo {
 
-    public enum Format {JSON, YAML, JSONANDYAML}
+    @Parameter(property = "resolve.outputFileName", defaultValue = "openapi")
+    private String outputFileName = "openapi";
+    @Parameter(property = "resolve.outputPath")
+    private String outputPath;
+    @Parameter(property = "resolve.outputFormat", defaultValue = "JSON")
+    private Format outputFormat = Format.JSON;
+    @Parameter(property = "resolve.resourcePackages")
+    private Set<String> resourcePackages;
+    @Parameter(property = "resolve.resourceClasses")
+    private Set<String> resourceClasses;
+    @Parameter(property = "resolve.modelConverterClasses")
+    private LinkedHashSet<String> modelConverterClasses;
+    @Parameter(property = "resolve.filterClass")
+    private String filterClass;
+    @Parameter(property = "resolve.readerClass")
+    private String readerClass;
+    @Parameter(property = "resolve.scannerClass")
+    private String scannerClass;
+    /**
+     * @since 2.0.6
+     */
+    @Parameter(property = "resolve.objectMapperProcessorClass")
+    private String objectMapperProcessorClass;
+    @Parameter(property = "resolve.prettyPrint")
+    private Boolean prettyPrint;
+    @Parameter(property = "resolve.readAllResources")
+    private Boolean readAllResources;
+    @Parameter(property = "resolve.ignoredRoutes")
+    private Collection<String> ignoredRoutes;
+    /**
+     * @since 2.0.6
+     */
+    @Parameter(property = "resolve.contextId", defaultValue = "${project.artifactId}")
+    private String contextId;
+    @Parameter(property = "resolve.skip")
+    private Boolean skip = Boolean.FALSE;
+    @Parameter(property = "resolve.openapiFilePath")
+    private String openapiFilePath;
+    /**
+     * @since 2.0.8
+     */
+    @Parameter(property = "resolve.configurationFilePath")
+    private String configurationFilePath;
+    @Parameter(defaultValue = "${project}", readonly = true)
+    private MavenProject project;
+    @Parameter(property = "resolve.encoding")
+    private String encoding;
+    private String projectEncoding = "UTF-8";
+    private SwaggerConfiguration config;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         if (skip) {
-            getLog().info( "Skipping OpenAPI specification resolution" );
+            getLog().info("Skipping OpenAPI specification resolution");
             return;
         }
-        getLog().info( "Resolving OpenAPI specification.." );
+        getLog().info("Resolving OpenAPI specification..");
 
+        initConfig();
+
+        OpenAPI openAPI = generateOpenAPI();
+
+        writeOpenApiSpec(openAPI);
+
+        render(openAPI);
+    }
+
+    private void render(OpenAPI openAPI) {
+        //            Path markdown = Paths.get(outputPath, outputFileName + ".mk");
+        //            Swagger2MarkupConverter.from(openapiYaml).build().toFolder(markdown);
+        new MarkDownBuilder().openAPI(openAPI).toFoler();
+    }
+
+    private void initConfig() throws MojoFailureException {
         if (project != null) {
             String pEnc = project.getProperties().getProperty("project.build.sourceEncoding");
             if (StringUtils.isNotBlank(pEnc)) {
@@ -79,8 +152,11 @@ public class ApidocMojo extends AbstractMojo {
         config = mergeConfig(openAPIInput.orElse(null), swaggerConfiguration.orElse(new SwaggerConfiguration()));
 
         setDefaultsIfMissing(config);
+    }
 
+    private OpenAPI generateOpenAPI() throws MojoExecutionException, MojoFailureException {
         try {
+
             GenericOpenApiContextBuilder builder = new JaxrsOpenApiContextBuilder()
                     .openApiConfiguration(config);
             if (StringUtils.isNotBlank(contextId)) {
@@ -92,15 +168,28 @@ public class ApidocMojo extends AbstractMojo {
 
             if (StringUtils.isNotBlank(filterClass)) {
                 try {
-                    OpenAPISpecFilter filterImpl = (OpenAPISpecFilter) this.getClass().getClassLoader().loadClass(filterClass).newInstance();
+                    OpenAPISpecFilter filterImpl =
+                            (OpenAPISpecFilter) this.getClass()
+                                                    .getClassLoader()
+                                                    .loadClass(filterClass)
+                                                    .newInstance();
                     SpecFilter f = new SpecFilter();
                     openAPI = f.filter(openAPI, filterImpl, new HashMap<>(), new HashMap<>(),
                             new HashMap<>());
                 } catch (Exception e) {
-                    getLog().error( "Error applying filter to API specification" , e);
+                    getLog().error("Error applying filter to API specification", e);
                     throw new MojoExecutionException("Error applying filter to API specification: " + e.getMessage(), e);
                 }
             }
+            return openAPI;
+        } catch (OpenApiConfigurationException e) {
+            getLog().error("Error resolving API specification", e);
+            throw new MojoFailureException(e.getMessage(), e);
+        }
+    }
+
+    private void writeOpenApiSpec(OpenAPI openAPI) throws MojoExecutionException {
+        try {
 
             String openapiJson = null;
             String openapiYaml = null;
@@ -134,16 +223,9 @@ public class ApidocMojo extends AbstractMojo {
                 path = Paths.get(outputPath, outputFileName + ".yaml");
                 Files.write(path, openapiYaml.getBytes(Charset.forName(encoding)));
             }
-
-        } catch (OpenApiConfigurationException e) {
-            getLog().error( "Error resolving API specification" , e);
-            throw new MojoFailureException(e.getMessage(), e);
         } catch (IOException e) {
-            getLog().error( "Error writing API specification" , e);
+            getLog().error("Error writing API specification", e);
             throw new MojoExecutionException("Failed to write API definition", e);
-        } catch (Exception e) {
-            getLog().error( "Error resolving API specification" , e);
-            throw new MojoExecutionException(e.getMessage(), e);
         }
     }
 
@@ -313,65 +395,6 @@ public class ApidocMojo extends AbstractMojo {
         return collection != null && !collection.isEmpty();
     }
 
-    @Parameter( property = "resolve.outputFileName", defaultValue = "openapi")
-    private String outputFileName = "openapi";
-
-    @Parameter( property = "resolve.outputPath" )
-    private String outputPath;
-
-    @Parameter( property = "resolve.outputFormat", defaultValue = "JSON")
-    private Format outputFormat = Format.JSON;
-
-    @Parameter( property = "resolve.resourcePackages" )
-    private Set<String> resourcePackages;
-    @Parameter( property = "resolve.resourceClasses" )
-    private Set<String> resourceClasses;
-    @Parameter( property = "resolve.modelConverterClasses" )
-    private LinkedHashSet<String> modelConverterClasses;
-    @Parameter( property = "resolve.filterClass" )
-    private String filterClass;
-    @Parameter( property = "resolve.readerClass" )
-    private String readerClass;
-    @Parameter( property = "resolve.scannerClass" )
-    private String scannerClass;
-    /**
-     * @since 2.0.6
-     */
-    @Parameter( property = "resolve.objectMapperProcessorClass" )
-    private String objectMapperProcessorClass;
-    @Parameter(property = "resolve.prettyPrint")
-    private Boolean prettyPrint;
-    @Parameter(property = "resolve.readAllResources")
-    private Boolean readAllResources;
-    @Parameter( property = "resolve.ignoredRoutes" )
-    private Collection<String> ignoredRoutes;
-    /**
-     * @since 2.0.6
-     */
-    @Parameter(property = "resolve.contextId", defaultValue = "${project.artifactId}")
-    private String contextId;
-
-    @Parameter( property = "resolve.skip" )
-    private Boolean skip = Boolean.FALSE;
-
-    @Parameter( property = "resolve.openapiFilePath")
-    private String openapiFilePath;
-
-    /**
-     * @since 2.0.8
-     */
-    @Parameter(property = "resolve.configurationFilePath")
-    private String configurationFilePath;
-
-    @Parameter(defaultValue = "${project}", readonly = true)
-    private MavenProject project;
-
-    @Parameter( property = "resolve.encoding" )
-    private String encoding;
-
-    private String projectEncoding = "UTF-8";
-    private SwaggerConfiguration config;
-
     public String getOutputPath() {
         return outputPath;
     }
@@ -391,4 +414,6 @@ public class ApidocMojo extends AbstractMojo {
     SwaggerConfiguration getInternalConfiguration() {
         return config;
     }
+
+    public enum Format {JSON, YAML, JSONANDYAML}
 }
