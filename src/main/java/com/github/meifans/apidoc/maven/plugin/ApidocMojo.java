@@ -1,5 +1,7 @@
 package com.github.meifans.apidoc.maven.plugin;
 
+import com.github.meifans.apidoc.maven.plugin.spring.SpringOpenApiContextBuilder;
+
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -31,7 +33,6 @@ import io.swagger.v3.core.filter.OpenAPISpecFilter;
 import io.swagger.v3.core.filter.SpecFilter;
 import io.swagger.v3.core.util.Json;
 import io.swagger.v3.core.util.Yaml;
-import io.swagger.v3.jaxrs2.integration.JaxrsOpenApiContextBuilder;
 import io.swagger.v3.oas.integration.GenericOpenApiContextBuilder;
 import io.swagger.v3.oas.integration.OpenApiConfigurationException;
 import io.swagger.v3.oas.integration.SwaggerConfiguration;
@@ -71,13 +72,6 @@ public class ApidocMojo extends AbstractMojo {
     private LinkedHashSet<String> modelConverterClasses;
     @Parameter(property = "resolve.filterClass")
     private String filterClass;
-    @Parameter(property = "resolve.readerClass")
-    private String readerClass;
-    @Parameter(property = "resolve.scannerClass")
-    private String scannerClass;
-    /**
-     * @since 2.0.6
-     */
     @Parameter(property = "resolve.objectMapperProcessorClass")
     private String objectMapperProcessorClass;
     @Parameter(property = "resolve.prettyPrint")
@@ -86,18 +80,12 @@ public class ApidocMojo extends AbstractMojo {
     private Boolean readAllResources;
     @Parameter(property = "resolve.ignoredRoutes")
     private Collection<String> ignoredRoutes;
-    /**
-     * @since 2.0.6
-     */
     @Parameter(property = "resolve.contextId", defaultValue = "${project.artifactId}")
     private String contextId;
     @Parameter(property = "resolve.skip")
     private Boolean skip = Boolean.FALSE;
     @Parameter(property = "resolve.openapiFilePath")
     private String openapiFilePath;
-    /**
-     * @since 2.0.8
-     */
     @Parameter(property = "resolve.configurationFilePath")
     private String configurationFilePath;
     @Parameter(defaultValue = "${project}", readonly = true)
@@ -106,6 +94,12 @@ public class ApidocMojo extends AbstractMojo {
     private String encoding;
     private String projectEncoding = "UTF-8";
     private SwaggerConfiguration config;
+
+    // different
+//    @Parameter(property = "resolve.readerClass")
+    private String readerClass ;
+//    @Parameter(property = "resolve.scannerClass")
+    private String scannerClass;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -157,7 +151,7 @@ public class ApidocMojo extends AbstractMojo {
     private OpenAPI generateOpenAPI() throws MojoExecutionException, MojoFailureException {
         try {
 
-            GenericOpenApiContextBuilder builder = new JaxrsOpenApiContextBuilder()
+            GenericOpenApiContextBuilder builder = new SpringOpenApiContextBuilder()
                     .openApiConfiguration(config);
             if (StringUtils.isNotBlank(contextId)) {
                 builder.ctxId(contextId);
